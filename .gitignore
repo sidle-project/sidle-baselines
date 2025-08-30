@@ -1,0 +1,10 @@
+build/
+*/build/
+.vscode
+*.log
+*.txt
+!CMakeLists.txt
+*/*.o
+*.o
+**/__pycache__
+*.csv
