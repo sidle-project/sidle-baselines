@@ -1,0 +1,60 @@
+#include "DirectoryConnection.h"
+
+#include "Connection.h"
+
+namespace SMART {
+
+DirectoryConnection::DirectoryConnection(uint16_t dirID, void *dsmPool,
+                                         uint64_t dsmSize, uint32_t machineNR,
+                                         RemoteConnection *remoteInfo)
+    : dirID(dirID), remoteInfo(remoteInfo) {
+#ifndef CXL
+  createContext(&ctx);
+  cq = ibv_create_cq(ctx.ctx, RAW_RECV_CQ_COUNT, NULL, NULL, 0);
+  message = new RawMessageConnection(ctx, cq, DIR_MESSAGE_NR);
+
+  message->initRecv();
+  message->initSend();
+#endif
+  // dsm memory
+  this->dsmPool = dsmPool;
+  this->dsmSize = dsmSize;
+#ifndef CXL 
+  this->dsmMR = createMemoryRegion((uint64_t)dsmPool, dsmSize, &ctx);
+  this->dsmLKey = dsmMR->lkey;
+#endif
+
+  // on-chip lock memory
+  if (dirID == 0) {
+#ifdef TREE_TEST_HOCL_HANDOVER
+    this->lockPool = (void *)define::kLockStartAddr;
+    this->lockSize = define::kLockChipMemSize;
+#ifndef CXL
+    this->lockMR = createMemoryRegionOnChip((uint64_t)this->lockPool,
+                                            this->lockSize, &ctx);
+    this->lockLKey = lockMR->lkey;
+#endif
+#endif
+  }
+
+#ifndef CXL
+  // app, RC
+  for (int i = 0; i < MAX_APP_THREAD; ++i) {
+    data2app[i] = new ibv_qp *[machineNR];
+    for (size_t k = 0; k < machineNR; ++k) {
+      createQueuePair(&data2app[i][k], IBV_QPT_RC, cq, &ctx);
+    }
+  }
+#endif
+}
+
+#ifndef CXL
+void DirectoryConnection::sendMessage2App(RawMessage *m, uint16_t node_id,
+                                          uint16_t th_id) {
+  message->sendRawMessage(m, remoteInfo[node_id].appMessageQPN[th_id],
+                          remoteInfo[node_id].dirToAppAh[dirID][th_id]);
+  ;
+}
+#endif
+
+} // namespace SMART
